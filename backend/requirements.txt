@@ -1,0 +1,15 @@
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.1
+psycopg[binary]==3.3.6
+alembic==1.20.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+email-validator==2.4.0
+pyjwt==2.15.0
+bcrypt==5.0.0
+
+# Development and CI
+pytest==9.1.1
+httpx==0.28.1
+ruff==0.16.9
