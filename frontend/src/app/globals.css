@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+/**
+ * Design tokens.
+ *
+ * The palette follows Odoo's own interface so the app feels like part of the suite:
+ * the plum brand colour on the top bar, teal for the primary action on a form, and a
+ * near-white page behind white "sheets". Everything below refers to these names, so a
+ * rebrand is a change here rather than a search across components.
+ */
+@theme {
+  --color-brand-50: #f6f1f5;
+  --color-brand-100: #e9dde6;
+  --color-brand-200: #d3bccd;
+  --color-brand-400: #9a7490;
+  --color-brand-500: #875a7b;
+  --color-brand-600: #714b67;
+  --color-brand-700: #5c3d54;
+  --color-brand-800: #472f41;
+
+  --color-accent-50: #e6f4f4;
+  --color-accent-100: #cce9ea;
+  --color-accent-500: #017e84;
+  --color-accent-600: #01686d;
+  --color-accent-700: #015256;
+
+  --color-canvas: #f9f9f9;
+  --color-sheet: #ffffff;
+  --color-line: #dee2e6;
+  --color-line-strong: #c9ced3;
+  --color-ink: #3c3c3c;
+  --color-ink-muted: #6b7280;
+
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --radius-sheet: 0.5rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  /* One visible focus ring everywhere, so keyboard users are never lost. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
+
+  /* Odoo-style form labels: small, muted, above the control. */
+  label {
+    font-weight: 500;
+  }
+
+  th {
+    font-weight: 600;
+  }
+}
+
+@layer components {
+  /**
+   * The "sheet": the white card a form sits on, as in every Odoo form view.
+   */
+  .sheet {
+    background-color: var(--color-sheet);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sheet);
+  }
+
+  /**
+   * An Odoo form field: the value sits under a muted label with a thin underline that
+   * turns solid on focus, rather than a fully boxed input.
+   */
+  .odoo-input {
+    width: 100%;
+    background-color: transparent;
+    border-bottom: 1px solid var(--color-line-strong);
+    padding: 0.25rem 0;
+    color: var(--color-ink);
+  }
+
+  .odoo-input:focus {
+    border-bottom-color: var(--color-accent-500);
+    outline: none;
+  }
+
+  .odoo-input:disabled {
+    color: var(--color-ink-muted);
+    border-bottom-style: dashed;
+  }
+}
+
+/* The scrollbar inside data tables, toned down so it does not fight the content. */
+@layer utilities {
+  .scrollbar-slim::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+    border-radius: 9999px;
+  }
+}
+
+/**
+ * Print: a validated document should print as a picking slip, not as a web page.
+ * Everything chrome-like is removed and the sheet is given the full width.
+ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .sheet {
+    border: none;
+    box-shadow: none;
+  }
+}
