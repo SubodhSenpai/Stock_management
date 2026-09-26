@@ -172,15 +172,12 @@ class AuthService:
         """
         user = self.users.get_by_email(email)
         if user is None or not user.is_active:
-            print(f"\n⚠️ [DEV NOTICE] Password reset requested for '{email}', but this email is NOT in the database!", flush=True)
-            print(f"👉 To use '{email}', create an account on http://localhost:3000/signup first!", flush=True)
-            print(f"👉 Or test with seeded email: manager@stocksense.local\n", flush=True)
+            print(f"\n⚠️ [DEV NOTICE] Password reset requested for '{email}', but this email is NOT in the database! Register this user first or use a seeded user (e.g. manager@stocksense.local).\n", flush=True)
             logger.info("Password reset requested for an unknown address")
             return None
 
         existing = self.otps.get_active(user.id)
         if existing is not None and self._within_resend_cooldown(existing):
-            print(f"\n⚠️ [DEV NOTICE] OTP was requested again within 60s cooldown. Wait a few seconds before requesting again.\n", flush=True)
             logger.info("Password reset re-requested during cooldown: user_id=%s", user.id)
             return None
 

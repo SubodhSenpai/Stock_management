@@ -53,13 +53,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request_id = incoming if _SAFE_REQUEST_ID.fullmatch(incoming) else uuid.uuid4().hex[:12]
         request.state.request_id = request_id
         token = request_id_ctx.set(request_id)
-        print(f"📡 [API] {request.method} {request.url.path}", flush=True)
         try:
             response = await call_next(request)
-            print(f"   ↳ [STATUS {response.status_code}] {request.method} {request.url.path}", flush=True)
-        except Exception as exc:
-            print(f"   ↳ [ERROR] {request.method} {request.url.path}: {exc}", flush=True)
-            raise
         finally:
             request_id_ctx.reset(token)
         response.headers[REQUEST_ID_HEADER] = request_id

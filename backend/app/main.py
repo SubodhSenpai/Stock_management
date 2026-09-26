@@ -53,17 +53,10 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            settings.frontend_origin,
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:3001",
-            "http://127.0.0.1:3001",
-        ],
-        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_origins=[settings.frontend_origin],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Request-ID"],
     )
     app.add_middleware(RequestContextMiddleware)
 
