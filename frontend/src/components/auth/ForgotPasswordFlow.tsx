@@ -27,13 +27,11 @@ export function ForgotPasswordFlow() {
   const [step, setStep] = useState<Step>("request");
   const [email, setEmail] = useState("");
   const [resetToken, setResetToken] = useState("");
-  const [devNotice, setDevNotice] = useState<string>();
 
   if (step === "verify") {
     return (
       <VerifyStep
         email={email}
-        devNotice={devNotice}
         onVerified={(token) => {
           setResetToken(token);
           setStep("reset");
@@ -49,9 +47,8 @@ export function ForgotPasswordFlow() {
 
   return (
     <RequestStep
-      onSent={(address, notice) => {
+      onSent={(address) => {
         setEmail(address);
-        setDevNotice(notice);
         setStep("verify");
       }}
     />
@@ -59,7 +56,7 @@ export function ForgotPasswordFlow() {
 }
 
 /** Step 1. The reply is the same whether or not the address is registered. */
-function RequestStep({ onSent }: { onSent: (email: string, notice?: string) => void }) {
+function RequestStep({ onSent }: { onSent: (email: string) => void }) {
   const [formError, setFormError] = useState<string>();
 
   const form = useForm({
@@ -68,8 +65,8 @@ function RequestStep({ onSent }: { onSent: (email: string, notice?: string) => v
     onSubmit: async (values, helpers) => {
       setFormError(undefined);
       try {
-        const res = await authApi.forgotPassword(values.email);
-        onSent(values.email, res.message);
+        await authApi.forgotPassword(values.email);
+        onSent(values.email);
       } catch (error) {
         const unplaced = isApiError(error) ? helpers.applyServerErrors(error) : [];
         setFormError(unplaced[0] ?? messageOf(error));
@@ -104,18 +101,14 @@ function RequestStep({ onSent }: { onSent: (email: string, notice?: string) => v
 /** Step 2. Exchange the code for a short-lived reset token. */
 function VerifyStep({
   email,
-  devNotice,
   onVerified,
   onBack,
 }: {
   email: string;
-  devNotice?: string;
   onVerified: (token: string) => void;
   onBack: () => void;
 }) {
   const [formError, setFormError] = useState<string>();
-  const match = devNotice?.match(/Dev Mode OTP:\s*(\d{6})/);
-  const devOtp = match ? match[1] : undefined;
 
   const form = useForm({
     schema: verifyOtpSchema,
@@ -139,22 +132,6 @@ function VerifyStep({
         title="Enter the code"
         description={`If ${email} is registered, a 6-digit code is on its way. It expires in 10 minutes.`}
       />
-      {devOtp ? (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 shadow-sm">
-          <p className="font-semibold text-amber-800">
-            ℹ️ Development Mode OTP
-          </p>
-          <p className="mt-1">
-            SMTP is not configured in local dev. Your OTP is:{" "}
-            <code className="rounded bg-amber-200/80 px-1.5 py-0.5 font-mono text-sm font-bold text-amber-950">
-              {devOtp}
-            </code>
-          </p>
-          <p className="mt-0.5 text-[11px] text-amber-600">
-            (Also printed in your backend terminal window)
-          </p>
-        </div>
-      ) : null}
       <FormAlert message={formError} />
 
       <Field label="Verification code" error={form.errorFor("otp")} required>

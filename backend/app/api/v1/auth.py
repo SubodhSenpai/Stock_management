@@ -5,23 +5,7 @@ refresh token is long-lived, revocable, and only ever sent to the refresh endpoi
 httpOnly, so no script on the page can read either one.
 """
 
-import logging
-import sys
-
 from fastapi import APIRouter, Request, Response, status
-
-# 1. Initialize custom logger
-logger = logging.getLogger("my_api_logger")
-logger.setLevel(logging.INFO)
-
-# 2. Force it to propagate logs up to Uvicorn's active handler
-logger.propagate = True
-
-# 3. Add direct console handler to guarantee output in terminal
-if not logger.handlers:
-    _sh = logging.StreamHandler(sys.stdout)
-    _sh.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-    logger.addHandler(_sh)
 
 from app.api.deps import AppSettings, AuthServiceDep, CurrentUser
 from app.core.config import Settings
@@ -166,20 +150,12 @@ def read_current_user(user: CurrentUser) -> UserOut:
 
 @router.post("/forgot-password", response_model=MessageOut, status_code=status.HTTP_202_ACCEPTED)
 def forgot_password(
-    body: ForgotPasswordRequest, request: Request, service: AuthServiceDep, settings: AppSettings
+    body: ForgotPasswordRequest, request: Request, service: AuthServiceDep
 ) -> MessageOut:
     """Start a password reset by emailing a one-time code."""
-    logger.info("--> [FORGOT PASSWORD] Request received for: %s <--", body.email)
     otp_request_limiter.check(_client_key(request, body.email))
-    code = service.request_password_reset(body.email)
-    if code:
-        logger.info("--> [OTP CODE] For email %s is: %s <--", body.email, code)
-    else:
-        logger.warning("--> [OTP NOTICE] Email %s not found in database or cooldown active <--", body.email)
-    msg = RESET_REQUEST_REPLY
-    if settings.env == "dev" and code:
-        msg = f"{RESET_REQUEST_REPLY} (Dev Mode OTP: {code})"
-    return MessageOut(message=msg)
+    service.request_password_reset(body.email)
+    return MessageOut(message=RESET_REQUEST_REPLY)
 
 
 @router.post("/verify-otp", response_model=ResetTokenOut)

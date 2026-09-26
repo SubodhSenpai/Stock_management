@@ -164,7 +164,7 @@ class AuthService:
         self.db.commit()
         return count
 
-    def request_password_reset(self, email: str) -> str | None:
+    def request_password_reset(self, email: str) -> None:
         """Email a one-time code, if the address belongs to an active account.
 
         Returns without a sign of what happened in every case, including unknown addresses
@@ -172,14 +172,13 @@ class AuthService:
         """
         user = self.users.get_by_email(email)
         if user is None or not user.is_active:
-            print(f"\n⚠️ [DEV NOTICE] Password reset requested for '{email}', but this email is NOT in the database! Register this user first or use a seeded user (e.g. manager@stocksense.local).\n", flush=True)
             logger.info("Password reset requested for an unknown address")
-            return None
+            return
 
         existing = self.otps.get_active(user.id)
         if existing is not None and self._within_resend_cooldown(existing):
             logger.info("Password reset re-requested during cooldown: user_id=%s", user.id)
-            return None
+            return
 
         self.otps.consume_active(user.id)
         code = generate_otp()
@@ -194,7 +193,6 @@ class AuthService:
 
         self.email.send_password_reset_otp(user.email, code, self.settings.otp_expire_minutes)
         logger.info("Password reset code sent: user_id=%s", user.id)
-        return code
 
     def verify_reset_otp(self, email: str, code: str) -> str:
         """Check a reset code and return a short-lived token that authorises the new password."""
