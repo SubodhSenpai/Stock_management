@@ -25,6 +25,13 @@ class EmailService:
         Never raises: a mail failure must not roll back the database work that triggered it.
         """
         if not self.settings.smtp_host:
+            print("\n" + "=" * 60, flush=True)
+            print(f"📧 [DEV EMAIL / PASSWORD RESET OTP]", flush=True)
+            print(f"To: {to}", flush=True)
+            print(f"Subject: {subject}", flush=True)
+            print("-" * 60, flush=True)
+            print(body, flush=True)
+            print("=" * 60 + "\n", flush=True)
             logger.info("Email not sent (no SMTP configured). To=%s | %s\n%s", to, subject, body)
             return
 

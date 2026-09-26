@@ -150,12 +150,15 @@ def read_current_user(user: CurrentUser) -> UserOut:
 
 @router.post("/forgot-password", response_model=MessageOut, status_code=status.HTTP_202_ACCEPTED)
 def forgot_password(
-    body: ForgotPasswordRequest, request: Request, service: AuthServiceDep
+    body: ForgotPasswordRequest, request: Request, service: AuthServiceDep, settings: AppSettings
 ) -> MessageOut:
     """Start a password reset by emailing a one-time code."""
     otp_request_limiter.check(_client_key(request, body.email))
-    service.request_password_reset(body.email)
-    return MessageOut(message=RESET_REQUEST_REPLY)
+    code = service.request_password_reset(body.email)
+    msg = RESET_REQUEST_REPLY
+    if settings.env == "dev" and code:
+        msg = f"{RESET_REQUEST_REPLY} (Dev Mode OTP: {code})"
+    return MessageOut(message=msg)
 
 
 @router.post("/verify-otp", response_model=ResetTokenOut)

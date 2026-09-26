@@ -319,6 +319,28 @@ class TestInputHandling:
         assert headers["X-Frame-Options"] == "DENY"
         assert headers["Referrer-Policy"] == "same-origin"
 
+    def test_api_responses_forbid_loading_anything(self, client: TestClient) -> None:
+        """The API returns JSON, so a response should never be able to load or run code.
+
+        `default-src 'none'` means a payload that somehow reached a browser as a document
+        could not fetch a script, submit a form or be framed.
+        """
+        policy = client.get(f"{API}/auth/me").headers["Content-Security-Policy"]
+
+        assert "default-src 'none'" in policy
+        assert "frame-ancestors 'none'" in policy
+        assert "form-action 'none'" in policy
+
+    def test_docs_page_relaxes_the_policy_only_for_itself(self, client: TestClient) -> None:
+        """Swagger UI needs its CDN, but that exception must not leak onto the API."""
+        docs_policy = client.get("/docs").headers["Content-Security-Policy"]
+        api_policy = client.get(f"{API}/health").headers["Content-Security-Policy"]
+
+        assert "cdn.jsdelivr.net" in docs_policy
+        assert "cdn.jsdelivr.net" not in api_policy
+        # Even the relaxed policy refuses to be framed.
+        assert "frame-ancestors 'none'" in docs_policy
+
     def test_every_response_carries_a_request_id(self, client: TestClient) -> None:
         """Lets a support report be matched to a server log line."""
         response = client.get(f"{API}/auth/me")
