@@ -8,7 +8,7 @@ Built for the Odoo Hackathon 2026.
 
 ## Status
 
-Backend is complete: **53 endpoints, 148 tests**. Frontend is next.
+Backend and frontend are both in place: **53 endpoints, 148 backend tests, 22 pages**.
 
 - Database schema and migrations
 - Authentication: sign-up, sign-in, rotating refresh tokens, OTP password reset
@@ -16,9 +16,11 @@ Backend is complete: **53 endpoints, 148 tests**. Frontend is next.
 - Stock engine: receipts, deliveries, internal transfers, adjustments
 - Stock page, move history, dashboard KPIs
 - Live updates over WebSocket
+- Next.js interface in the Odoo style: list and kanban views, form views with a status
+  bar, printable picking slips
 
-To check any of that for yourself, see [Testing the backend](#testing-the-backend). The
-test, report and load-test scripts are all in the repo.
+To check any of that for yourself, see [Testing](#testing). The test, report, load-test
+and smoke-test scripts are all in the repo.
 
 ## Stack
 
@@ -29,15 +31,21 @@ test, report and load-test scripts are all in the repo.
 | ORM / migrations | SQLAlchemy 2, Alembic |
 | Auth | PyJWT + bcrypt, written from scratch |
 | Live updates | WebSocket, no third-party service |
-| Lint / format | ruff (includes bandit security rules) |
-| Tests | pytest, against a real database |
+| Web | Next.js 15 (App Router), React 19, TypeScript strict |
+| Styling | Tailwind CSS 4, themed to match Odoo |
+| Client validation | Zod, mirroring the Pydantic rules |
+| Lint / format | ruff (includes bandit security rules), ESLint |
+| Tests | pytest against a real database; an HTTP smoke test for the web app |
 | Load testing | httpx, in `scripts/loadtest.py` |
 
-No third-party auth, email or realtime services. Everything is built in the app.
+No third-party auth, email, realtime, state-management, form or component library.
+Everything above is either the framework itself or written in the app.
 
 ## Setup
 
-You need Python 3.11+ and PostgreSQL running locally.
+You need Python 3.11+, Node 20+ and PostgreSQL running locally.
+
+### Backend
 
 **1. Install dependencies**
 
@@ -82,12 +90,29 @@ The seed script loads demo data and can be re-run safely. Sign in with `manager1
 API docs: http://localhost:8000/docs
 Health check: http://localhost:8000/api/v1/health
 
-## Testing the backend
+### Frontend
+
+In a second terminal, with the API already running:
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local     # Windows: copy .env.example .env.local
+npm run dev
+```
+
+Open http://localhost:3000 and sign in with the same demo accounts.
+
+`.env.local` points the browser at the API. The default matches the backend's
+`FRONTEND_ORIGIN`; if you change one, change the other, or the browser will drop the
+session cookie on a CORS failure.
+
+## Testing
 
 Everything needed to check this project is in the repo. Run it yourself rather than taking
 the numbers below on trust.
 
-### 1. The test suite
+### 1. The backend test suite
 
 ```bash
 cd backend
@@ -156,15 +181,34 @@ requests, so throughput scales by adding workers:
 python -m uvicorn app.main:app --workers 4
 ```
 
-### 4. Code quality checks
+### 4. End-to-end smoke test
+
+With both servers running and the database seeded:
 
 ```bash
+cd frontend
+npm run smoke
+```
+
+29 checks over real HTTP against both processes: that a signed-out visitor is redirected,
+that an anonymous API call returns 401 and no data, that signing in sets both cookies and
+that CORS allows them, that all 12 signed-in pages render, and that every list endpoint
+returns the shape the pages are built on. Nothing is mocked, so it catches the things that
+work in isolation and break in combination.
+
+### 5. Code quality checks
+
+```bash
+cd backend
 ruff check .            # lint, including bandit security rules
 ruff format --check .   # formatting
 python -m alembic check # models and migrations still agree
-```
 
-All four commands are also run by CI on every push.
+cd ../frontend
+npm run typecheck       # tsc --noEmit, strict mode
+npm run lint            # ESLint
+npm run build           # production build
+```
 
 **Reports are not committed.** `backend/reports/` is git-ignored, because both files are
 regenerated on every run and the load numbers depend on the machine. The scripts that
@@ -209,11 +253,27 @@ backend/
   alembic/         migrations
   tests/           pytest suite
   scripts/         database setup
+frontend/
+  src/
+    app/           routes: (auth) signed out, (app) signed in
+    components/    ui/ primitives, then one folder per area
+    lib/
+      api/         one module per resource; the only place fetch is called
+      config/      the operation, status and navigation tables
+      hooks/       useResource, useForm, useAction, useUrlFilters
+      validation/  Zod schemas mirroring the Pydantic rules
+    providers/     session, realtime, toasts
+    types/api.ts   TypeScript mirrors of the API's response models
+  scripts/         smoke test
 docs/              ER diagram and schema notes
 ```
 
 Routers call services, services call repositories. Routers never query the database
 directly, and services don't know anything about HTTP.
+
+On the frontend the same idea applies: pages compose components, components call the
+API modules, and nothing above `lib/api` calls `fetch`. Cookies, token refresh and the
+error contract are therefore handled once.
 
 ## Design notes
 
@@ -246,6 +306,43 @@ stored as HMACs, and unknown request fields are rejected. Login failures and pas
 reset requests answer identically whether or not the account exists. A test walks every
 route in the app and fails if any of them answers without a session.
 
+## The interface
+
+The app follows Odoo's own conventions, so anyone who has used Odoo already knows where
+things are: the plum application bar, a control panel above every list with the search
+and the view switcher, list and kanban views of the same records, and a form view on a
+white sheet with the status bar in the top right.
+
+**Four document types, one screen.** Receipts, deliveries, transfers and adjustments are
+one engine on the backend, so they are one set of components here. What differs between
+them — the labels, which locations the user picks, the statuses, whether a quantity is
+moved or counted — is a row in `lib/config/operations.ts`. A fifth document type would be
+a row, not another copy of the page.
+
+**Buttons come from the server.** `ActionBar` renders exactly the actions in the
+document's `allowed_actions`. The state machine is not reimplemented in the client, so
+the UI cannot offer something the server would refuse, or hide something it would allow.
+
+**Validation is written once per rule, checked on both sides.** `lib/validation/rules.ts`
+mirrors `backend/app/schemas/fields.py` field for field — the same lengths, the same
+patterns, the same password rules. The browser copy exists so a typo is caught before a
+round trip; the server copy is the one that decides. When the server does reject
+something, its `details[].field` paths use the same format the client's own errors do,
+so both land on the right input.
+
+**Quantities stay strings.** The API sends `NUMERIC` columns as JSON strings, and they
+are kept that way through the form and back. Parsing them into floats would reintroduce
+exactly the rounding the database was chosen to avoid.
+
+**Nothing above `lib/api` calls fetch.** Session cookies, the transparent refresh on a
+401 and the error contract are handled in one file. The refresh is single-flight: several
+requests can fail at once, and rotating the token more than once would look like a stolen
+token to the backend, which revokes every session when it sees one reused.
+
+**Every list has four states** — loading skeleton, empty with a call to action, error
+with the request id and a retry, and the data itself. Filters live in the URL, so a
+filtered list can be shared and survives a refresh.
+
 ## Notable behaviour
 
 **Reserving stock.** Confirming a delivery or transfer sets stock aside, which is what
@@ -271,8 +368,8 @@ makes it impossible even if that check were bypassed.
 - [API reference](docs/API.md) - sessions, errors, paging and the endpoint list
 - [Database design and ER diagram](docs/ER-DIAGRAM.md)
 - Interactive API docs: run the server and open `/docs`
-- [Testing the backend](#testing-the-backend) - how to run the suite, the report and the
-  load test yourself
+- [Testing](#testing) - how to run the suite, the report, the load test and the smoke
+  test yourself
 
 ### Scripts
 
@@ -282,3 +379,4 @@ makes it impossible even if that check were bypassed.
 | `backend/scripts/loadtest.py` | Concurrent load test, writes `reports/LOAD-TEST.md` |
 | `backend/scripts/create_local_db.sql` | One-time database and role setup |
 | `backend/tests/qa_report.py` | The `--qa-report` plugin, writes `reports/TEST-REPORT.md` |
+| `frontend/scripts/smoke.mjs` | End-to-end check of both servers; `npm run smoke` |
