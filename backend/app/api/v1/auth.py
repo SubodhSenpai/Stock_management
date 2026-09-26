@@ -5,7 +5,12 @@ refresh token is long-lived, revocable, and only ever sent to the refresh endpoi
 httpOnly, so no script on the page can read either one.
 """
 
+import logging
+
 from fastapi import APIRouter, Request, Response, status
+
+# Tie into the existing logger that Uvicorn uses
+uvicorn_logger = logging.getLogger("uvicorn.error")
 
 from app.api.deps import AppSettings, AuthServiceDep, CurrentUser
 from app.core.config import Settings
@@ -155,6 +160,10 @@ def forgot_password(
     """Start a password reset by emailing a one-time code."""
     otp_request_limiter.check(_client_key(request, body.email))
     code = service.request_password_reset(body.email)
+    if code:
+        uvicorn_logger.info("🔑 [OTP CODE] For email %s -> OTP: %s", body.email, code)
+    else:
+        uvicorn_logger.warning("⚠️ [OTP] Requested for %s, but email not in DB or cooldown active", body.email)
     msg = RESET_REQUEST_REPLY
     if settings.env == "dev" and code:
         msg = f"{RESET_REQUEST_REPLY} (Dev Mode OTP: {code})"
