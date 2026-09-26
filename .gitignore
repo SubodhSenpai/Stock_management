@@ -13,6 +13,9 @@ node_modules/
 out/
 *.tsbuildinfo
 
+# Generated reports (regenerate with: pytest --qa-report, scripts/loadtest.py)
+backend/reports/
+
 # Environment (only the example file is committed)
 .env
 .env.*
