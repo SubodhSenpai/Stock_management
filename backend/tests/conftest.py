@@ -21,6 +21,8 @@ from app.api.deps import get_db
 from app.core.config import get_settings
 from app.main import create_app
 
+pytest_plugins = ["tests.qa_report"]
+
 
 def _test_database_url() -> str:
     settings = get_settings()
