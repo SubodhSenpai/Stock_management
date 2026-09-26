@@ -6,6 +6,8 @@ Security decisions worth knowing:
   endpoint cannot be used to discover who has an account.
 * Reset codes are stored as an HMAC, never in plain text, and each one expires, has a
   limited number of attempts and can be used once.
+* Refresh tokens rotate on every use. Presenting one that was already used means the
+  token was copied, so every session for that user is revoked.
 """
 
 import logging
@@ -20,11 +22,22 @@ from app.core.exceptions import (
     OtpError,
 )
 from app.core.security import hash_password, verify_password
-from app.core.tokens import create_access_token, create_reset_token, generate_otp, hash_otp
+from app.core.tokens import (
+    create_access_token,
+    create_reset_token,
+    generate_otp,
+    generate_refresh_token,
+    hash_otp,
+    hash_refresh_token,
+)
 from app.core.tokens import token_subject as subject_from_token
 from app.core.tokens import verify_otp as otp_matches
-from app.models.user import PasswordResetOtp, User
-from app.repositories.user_repo import OtpRepository, UserRepository
+from app.models.user import PasswordResetOtp, RefreshToken, User
+from app.repositories.user_repo import (
+    OtpRepository,
+    RefreshTokenRepository,
+    UserRepository,
+)
 from app.schemas.auth import ChangePasswordRequest, SignupRequest, UpdateProfileRequest
 from app.services.email_service import EmailService
 
@@ -40,12 +53,14 @@ class AuthService:
         db: Session,
         users: UserRepository,
         otps: OtpRepository,
+        refresh_tokens: RefreshTokenRepository,
         email: EmailService,
         settings: Settings,
     ) -> None:
         self.db = db
         self.users = users
         self.otps = otps
+        self.refresh_tokens = refresh_tokens
         self.email = email
         self.settings = settings
 
@@ -85,6 +100,69 @@ class AuthService:
 
     def issue_access_token(self, user: User) -> str:
         return create_access_token(user.id)
+
+    def start_session(self, user: User, *, user_agent: str | None = None) -> tuple[str, str]:
+        """Return a fresh (access token, refresh token) pair for a signed-in user."""
+        refresh = generate_refresh_token()
+        self.refresh_tokens.add(
+            RefreshToken(
+                user_id=user.id,
+                token_hash=hash_refresh_token(refresh),
+                expires_at=datetime.now(UTC) + timedelta(days=self.settings.refresh_expire_days),
+                user_agent=(user_agent or "")[:200] or None,
+            )
+        )
+        self.db.commit()
+        return create_access_token(user.id), refresh
+
+    def refresh_session(
+        self, refresh_token: str, *, user_agent: str | None = None
+    ) -> tuple[User, str, str]:
+        """Exchange a refresh token for a new pair, retiring the one presented.
+
+        Rotating on every use means a copied token is only good until the real client
+        refreshes next. Seeing an already-used token is treated as theft: every session
+        for that user is revoked, so both parties have to sign in again.
+        """
+        stored = self.refresh_tokens.get_by_hash(hash_refresh_token(refresh_token))
+        if stored is None:
+            raise AuthenticationError("Your session has expired. Please sign in again.")
+
+        if stored.revoked_at is not None:
+            revoked = self.refresh_tokens.revoke_all_for_user(stored.user_id)
+            self.db.commit()
+            logger.warning(
+                "Reused refresh token for user_id=%s; revoked %d session(s)",
+                stored.user_id,
+                revoked,
+            )
+            raise AuthenticationError("Your session has expired. Please sign in again.")
+
+        if stored.expires_at <= datetime.now(UTC):
+            raise AuthenticationError("Your session has expired. Please sign in again.")
+
+        user = self.users.get(stored.user_id)
+        if user is None or not user.is_active:
+            raise AuthenticationError("Your session has expired. Please sign in again.")
+
+        self.refresh_tokens.revoke(stored)
+        access, refresh = self.start_session(user, user_agent=user_agent)
+        return user, access, refresh
+
+    def end_session(self, refresh_token: str | None) -> None:
+        """Sign out. Missing or unknown tokens are ignored so logout always succeeds."""
+        if not refresh_token:
+            return
+        stored = self.refresh_tokens.get_by_hash(hash_refresh_token(refresh_token))
+        if stored is not None:
+            self.refresh_tokens.revoke(stored)
+            self.db.commit()
+
+    def end_all_sessions(self, user: User) -> int:
+        """Sign the user out everywhere, used after a password change."""
+        count = self.refresh_tokens.revoke_all_for_user(user.id)
+        self.db.commit()
+        return count
 
     def request_password_reset(self, email: str) -> None:
         """Email a one-time code, if the address belongs to an active account.
@@ -153,6 +231,7 @@ class AuthService:
 
         user.password_hash = hash_password(new_password)
         self.otps.consume_active(user.id)
+        self.refresh_tokens.revoke_all_for_user(user.id)
         self.db.commit()
         logger.info("Password reset completed: user_id=%s", user.id)
 
@@ -163,6 +242,8 @@ class AuthService:
                 code="INVALID_CREDENTIALS",
             )
         user.password_hash = hash_password(data.password)
+        # Any other session is now suspect, so force a fresh sign-in everywhere.
+        self.refresh_tokens.revoke_all_for_user(user.id)
         self.db.commit()
         logger.info("Password changed: user_id=%s", user.id)
 

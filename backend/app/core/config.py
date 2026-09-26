@@ -23,8 +23,12 @@ class Settings(BaseSettings):
 
     jwt_secret: str = Field(min_length=16)
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = Field(default=720, gt=0)
+    # Short-lived on purpose: a stolen access token expires quickly, and the refresh
+    # token (which can be revoked) is what keeps a session alive.
+    jwt_expire_minutes: int = Field(default=15, gt=0)
+    refresh_expire_days: int = Field(default=7, gt=0)
     auth_cookie_name: str = "access_token"
+    refresh_cookie_name: str = "refresh_token"
     cookie_secure: bool = False
 
     otp_secret: str = Field(min_length=16)

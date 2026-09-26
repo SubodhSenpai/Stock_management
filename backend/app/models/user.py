@@ -1,6 +1,6 @@
-"""Users and password-reset codes."""
+"""Users, password-reset codes and refresh tokens."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -59,3 +59,28 @@ class PasswordResetOtp(IdMixin, CreatedAtMixin, Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     attempts: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RefreshToken(IdMixin, CreatedAtMixin, Base):
+    """A long-lived session token, stored hashed so a database leak cannot resume sessions.
+
+    Refresh tokens rotate: using one revokes it and issues a replacement. If a revoked
+    token is presented again, that is a sign it was copied, so every session for that user
+    is revoked.
+    """
+
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash"),
+        Index("ix_refresh_tokens_user_id_expires_at", "user_id", "expires_at"),
+    )
+
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    user_agent: Mapped[str | None] = mapped_column(String(200))
+
+    @property
+    def is_usable(self) -> bool:
+        return self.revoked_at is None and self.expires_at > datetime.now(UTC)

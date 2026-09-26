@@ -1,11 +1,14 @@
-"""Queries over users and password-reset codes. No business rules, no commits."""
+"""Queries over users, password-reset codes and refresh tokens.
+
+No business rules and no commits: services decide what happens and when it is saved.
+"""
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.user import PasswordResetOtp, User
+from app.models.user import PasswordResetOtp, RefreshToken, User
 
 
 class UserRepository:
@@ -61,3 +64,42 @@ class OtpRepository:
         if otp is not None:
             otp.consumed_at = datetime.now(UTC)
             self.db.flush()
+
+
+class RefreshTokenRepository:
+    """Refresh tokens are looked up by hash; the raw value is never stored."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def add(self, token: RefreshToken) -> RefreshToken:
+        self.db.add(token)
+        self.db.flush()
+        return token
+
+    def get_by_hash(self, token_hash: str) -> RefreshToken | None:
+        stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def revoke(self, token: RefreshToken) -> None:
+        if token.revoked_at is None:
+            token.revoked_at = datetime.now(UTC)
+            self.db.flush()
+
+    def revoke_all_for_user(self, user_id: int) -> int:
+        """Sign every session out. Used when a token appears to have been copied."""
+        result = self.db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(UTC))
+        )
+        self.db.flush()
+        return result.rowcount
+
+    def delete_expired(self) -> int:
+        """Housekeeping: drop tokens that can no longer be used."""
+        result = self.db.execute(
+            delete(RefreshToken).where(RefreshToken.expires_at < datetime.now(UTC))
+        )
+        self.db.flush()
+        return result.rowcount

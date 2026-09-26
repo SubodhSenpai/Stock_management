@@ -19,6 +19,7 @@ TokenPurpose = Literal["access", "reset"]
 
 OTP_LENGTH = 6
 RESET_TOKEN_MINUTES = 10
+REFRESH_TOKEN_BYTES = 48
 
 
 def _encode(subject: int, purpose: TokenPurpose, expires_in: timedelta) -> str:
@@ -76,3 +77,19 @@ def hash_otp(otp: str) -> str:
 
 def verify_otp(otp: str, otp_hash: str) -> bool:
     return hmac.compare_digest(hash_otp(otp), otp_hash)
+
+
+def generate_refresh_token() -> str:
+    """A random opaque token.
+
+    Deliberately not a JWT: a refresh token must be revocable, and revoking a self-contained
+    token means keeping a blocklist anyway. An opaque value looked up in the database is
+    simpler and revocation is immediate.
+    """
+    return secrets.token_urlsafe(REFRESH_TOKEN_BYTES)
+
+
+def hash_refresh_token(token: str) -> str:
+    """Store only the hash, so a database leak cannot be used to resume sessions."""
+    settings = get_settings()
+    return hmac.new(settings.jwt_secret.encode(), token.encode(), sha256).hexdigest()
