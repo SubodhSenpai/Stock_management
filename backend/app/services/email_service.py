@@ -6,12 +6,23 @@ log instead, so the OTP flow can be demonstrated without a mail server.
 
 import logging
 import smtplib
+import sys
 from email.message import EmailMessage
 
 from app.core.config import Settings
 
-# Tie into the existing logger that Uvicorn uses
-logger = logging.getLogger("uvicorn.error")
+# 1. Initialize custom logger
+logger = logging.getLogger("my_api_logger")
+logger.setLevel(logging.INFO)
+
+# 2. Force it to propagate logs up to Uvicorn's active handler
+logger.propagate = True
+
+# 3. Direct stdout handler to guarantee display in terminal
+if not logger.handlers:
+    _sh = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(_sh)
 
 SMTP_TIMEOUT_SECONDS = 10
 
@@ -54,7 +65,7 @@ class EmailService:
             logger.exception("Failed to send email to %s", to)
 
     def send_password_reset_otp(self, to: str, otp: str, valid_minutes: int) -> None:
-        logger.info("🔑 [OTP] Verification code for %s is: %s", to, otp)
+        logger.info("--> [OTP CODE] Verification code for %s is: %s <--", to, otp)
         body = (
             "Someone asked to reset your StockSense password.\n\n"
             f"Your verification code is: {otp}\n\n"

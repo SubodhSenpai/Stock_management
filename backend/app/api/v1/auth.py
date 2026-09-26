@@ -6,11 +6,22 @@ httpOnly, so no script on the page can read either one.
 """
 
 import logging
+import sys
 
 from fastapi import APIRouter, Request, Response, status
 
-# Tie into the existing logger that Uvicorn uses
-uvicorn_logger = logging.getLogger("uvicorn.error")
+# 1. Initialize custom logger
+logger = logging.getLogger("my_api_logger")
+logger.setLevel(logging.INFO)
+
+# 2. Force it to propagate logs up to Uvicorn's active handler
+logger.propagate = True
+
+# 3. Add direct console handler to guarantee output in terminal
+if not logger.handlers:
+    _sh = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(_sh)
 
 from app.api.deps import AppSettings, AuthServiceDep, CurrentUser
 from app.core.config import Settings
@@ -158,12 +169,13 @@ def forgot_password(
     body: ForgotPasswordRequest, request: Request, service: AuthServiceDep, settings: AppSettings
 ) -> MessageOut:
     """Start a password reset by emailing a one-time code."""
+    logger.info("--> [FORGOT PASSWORD] Request received for: %s <--", body.email)
     otp_request_limiter.check(_client_key(request, body.email))
     code = service.request_password_reset(body.email)
     if code:
-        uvicorn_logger.info("🔑 [OTP CODE] For email %s -> OTP: %s", body.email, code)
+        logger.info("--> [OTP CODE] For email %s is: %s <--", body.email, code)
     else:
-        uvicorn_logger.warning("⚠️ [OTP] Requested for %s, but email not in DB or cooldown active", body.email)
+        logger.warning("--> [OTP NOTICE] Email %s not found in database or cooldown active <--", body.email)
     msg = RESET_REQUEST_REPLY
     if settings.env == "dev" and code:
         msg = f"{RESET_REQUEST_REPLY} (Dev Mode OTP: {code})"
